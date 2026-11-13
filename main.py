@@ -2,7 +2,9 @@ import os
 import streamlit as st
 import anthropic
 
-from tools import get_stock_price, tools
+from tools import get_stock_price, search_youtube, tools
+
+list_tools = [tool["name"] for tool in tools]
 
 api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
@@ -55,10 +57,16 @@ if prompt := st.chat_input("Ask something"):
             for block in response.content:
                 if block.type != "tool_use":
                     continue
-                if block.name != "get_stock_price":
+                if block.name not in list_tools:
                     raise ValueError(f"Claude requested an unknown tool: {block.name}")
 
-                result = get_stock_price(block.input["ticker"])
+                if block.name == "get_stock_price":
+                    result = get_stock_price(block.input["ticker"])
+                if block.name == "search_youtube":
+                    result = search_youtube(
+                        block.input["query"],
+                        block.input.get("max_results", 5),
+                    )
                 tool_results.append(
                     {
                         "type": "tool_result",
