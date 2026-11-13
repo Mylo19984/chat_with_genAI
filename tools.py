@@ -67,6 +67,42 @@ def search_youtube(query: str, max_results: int = 5, YT_KEY: str = os.getenv("YO
     except (KeyError, ValueError) as e:
         return {"error": f"Unexpected YouTube API response: {e}"}
 
+def send_telegram_message(text: str, chat_id: str = os.getenv("TELEGRAM_CHAT_ID"), bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN")):
+    """
+    Send a message to a Telegram chat via the Telegram Bot API.
+
+    Args:
+        text (str): The message text to send.
+        chat_id (str): The target chat ID (defaults to TELEGRAM_CHAT_ID).
+        bot_token (str): The Telegram bot token (defaults to TELEGRAM_BOT_TOKEN).
+    Returns:
+        dict: The Telegram API response, or a dict with an "error" key on failure.
+    """
+    if not bot_token:
+        return {"error": "TELEGRAM_BOT_TOKEN is not set."}
+    if not chat_id:
+        return {"error": "TELEGRAM_CHAT_ID is not set."}
+
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": text},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if not data.get("ok"):
+            return {"error": f"Telegram API error: {data.get('description')}"}
+        return {"ok": True, "message_id": data["result"]["message_id"]}
+    except requests.exceptions.Timeout:
+        return {"error": "Telegram request timed out."}
+    except requests.exceptions.HTTPError as e:
+        return {"error": f"Telegram API returned an error: {e}"}
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Network error sending Telegram message: {e}"}
+    except (KeyError, ValueError) as e:
+        return {"error": f"Unexpected Telegram API response: {e}"}
+
 tools = [
     {
         "name": "get_stock_price",
@@ -112,6 +148,20 @@ tools = [
                 },
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "send_telegram_message",
+        "description": "Send a message to a Telegram chat via the Telegram Bot API.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The message text to send.",
+                }
+            },
+            "required": ["text"],
         },
     },
 

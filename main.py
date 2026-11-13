@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import anthropic
 
-from tools import get_stock_price, search_youtube, tools
+from tools import get_stock_price, search_youtube, send_telegram_message, tools
 
 list_tools = [tool["name"] for tool in tools]
 
@@ -67,6 +67,8 @@ if prompt := st.chat_input("Ask something"):
                         block.input["query"],
                         block.input.get("max_results", 5),
                     )
+                if block.name == "send_telegram_message":
+                    result = send_telegram_message(block.input["text"])
                 tool_results.append(
                     {
                         "type": "tool_result",
