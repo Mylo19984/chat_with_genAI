@@ -1,4 +1,5 @@
 import os
+import logging
 import streamlit as st
 import anthropic
 
@@ -9,6 +10,12 @@ from tools import (
     send_telegram_message,
     tools,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 list_tools = [tool["name"] for tool in tools]
 
@@ -39,6 +46,7 @@ for m in st.session_state.messages:
             st.markdown(display_content)
 
 if prompt := st.chat_input("Ask something"):
+    logger.info("User prompt: %s", prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -52,9 +60,16 @@ if prompt := st.chat_input("Ask something"):
                 system="You are a helpful assistant.",
                 messages=st.session_state.messages,
             )
+            logger.info("Claude response received: stop_reason=%s", response.stop_reason)
 
             if response.stop_reason != "tool_use":
                 break
+
+            for block in response.content:
+                if block.type == "text":
+                    logger.info("Claude intermediate text: %s", block.text)
+                elif block.type == "tool_use":
+                    logger.info("Claude requested tool: %s", block.name)
 
             st.session_state.messages.append(
                 {"role": "assistant", "content": response.content}
@@ -80,11 +95,13 @@ if prompt := st.chat_input("Ask something"):
                     )
                 if block.name == "send_telegram_message":
                     result = send_telegram_message(block.input["text"])
+                tool_result_content = str(result)
+                logger.info("Tool result (%s): %s", block.name, tool_result_content)
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": str(result),
+                        "content": tool_result_content,
                     }
                 )
 
@@ -101,5 +118,6 @@ if prompt := st.chat_input("Ask something"):
     reply = "\n".join(
         block.text for block in response.content if block.type == "text"
     )
+    logger.info("Final assistant response: %s", reply)
     with st.chat_message("assistant"):
         st.markdown(reply)
