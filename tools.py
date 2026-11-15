@@ -1,5 +1,12 @@
-import os, json, re, requests
+import logging
+import os
+import re
+import requests
 from urllib.parse import parse_qs, urlparse
+
+logger = logging.getLogger(__name__)
+UNTRUSTED_TOOLS = {"get_youtube_transcript", "search_youtube"}
+
 
 def get_stock_price(ticker: str):
     """
@@ -178,6 +185,56 @@ def send_telegram_message(text: str, chat_id: str = os.getenv("TELEGRAM_CHAT_ID"
         return {"error": f"Network error sending Telegram message: {e}"}
     except (KeyError, ValueError) as e:
         return {"error": f"Unexpected Telegram API response: {e}"}
+
+
+def execute_tool_calls(content):
+    """Run Claude tool-use blocks and return their corresponding tool results."""
+    tool_names = {tool["name"] for tool in tools}
+    tool_results = []
+
+    for block in content:
+        if block.type != "tool_use":
+            continue
+        if block.name not in tool_names:
+            raise ValueError(f"Claude requested an unknown tool: {block.name}")
+
+        if block.name == "get_stock_price":
+            result = get_stock_price(block.input["ticker"])
+        elif block.name == "dummy_youtube_search":
+            result = dummy_youtube_search(block.input["query"])
+        elif block.name == "search_youtube":
+            result = search_youtube(
+                block.input["query"],
+                block.input.get("max_results", 5),
+            )
+        elif block.name == "get_youtube_transcript":
+            result = get_youtube_transcript(
+                block.input["video_url"],
+                block.input.get("language", "en"),
+            )
+        elif block.name == "send_telegram_message":
+            result = send_telegram_message(block.input["text"])
+        else:
+            raise ValueError(f"No implementation is registered for tool: {block.name}")
+
+        tool_result_content = str(result)
+        if block.name in UNTRUSTED_TOOLS:
+            # Prevent external content from closing its untrusted wrapper early.
+            tool_result_content = tool_result_content.replace("</untrusted_content>", "")
+            tool_result_content = (
+                f"<untrusted_content>\n{tool_result_content}\n</untrusted_content>"
+            )
+        logger.info("Tool result (%s): %s", block.name, tool_result_content)
+        tool_results.append(
+            {
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": tool_result_content,
+            }
+        )
+
+    return tool_results
+
 
 tools = [
     {
