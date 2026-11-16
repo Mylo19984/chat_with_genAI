@@ -3,18 +3,13 @@ import logging
 import streamlit as st
 import anthropic
 
-from tools import (
-    execute_tool_calls,
-    tools,
-)
+from ai_conversation import chat_with_ai
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-NUMBER_OF_ITERATIONS = 4
 
 api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
@@ -58,60 +53,6 @@ if prompt := st.chat_input("Ask something"):
         st.markdown(prompt)
 
     with st.spinner("Thinking..."):
-        for iteration in range(1, NUMBER_OF_ITERATIONS + 1):
-            response = client.messages.create(
-                model="claude-sonnet-4-5",
-                max_tokens=1024,
-                tools=tools,
-                system=SYSTEM_PROMPT,
-                messages=st.session_state.messages,
-            )
-            logger.info(
-                "Claude response received: iteration=%s stop_reason=%s",
-                iteration,
-                response.stop_reason,
-            )
-
-            if response.stop_reason != "tool_use":
-                break
-
-            for block in response.content:
-                if block.type == "text":
-                    logger.info("Claude intermediate text: %s", block.text)
-                elif block.type == "tool_use":
-                    logger.info("Claude requested tool: %s", block.name)
-
-            st.session_state.messages.append(
-                {"role": "assistant", "content": response.content}
-            )
-            tool_results = execute_tool_calls(response.content)
-
-            if not tool_results:
-                raise RuntimeError("Claude requested tool use without any tool calls.")
-
-            st.session_state.messages.append(
-                {"role": "user", "content": tool_results}
-            )
-        else:
-            response = None
-            logger.warning(
-                "Stopped after reaching the %s-iteration tool-use limit.",
-                NUMBER_OF_ITERATIONS,
-            )
-
-    if response is None:
-        reply = (
-            f"Stopped after {NUMBER_OF_ITERATIONS} tool-use iterations. "
-            "Please continue with another message if you want me to keep going."
-        )
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-    else:
-        st.session_state.messages.append(
-            {"role": "assistant", "content": response.content}
-        )
-        reply = "\n".join(
-            block.text for block in response.content if block.type == "text"
-        )
-    logger.info("Final assistant response: %s", reply)
+        reply = chat_with_ai(client, st.session_state.messages, SYSTEM_PROMPT)
     with st.chat_message("assistant"):
         st.markdown(reply)
