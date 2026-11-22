@@ -52,6 +52,8 @@ async def _chat_with_mcp(client, messages, system_prompt):
                 _anthropic_tool(tool) for tool in mcp_result.tools
             ]
 
+            local_tool_names = {tool["name"] for tool in local_tools}
+
             for iteration in range(1, NUMBER_OF_ITERATIONS + 1):
                 response = await asyncio.to_thread(
                     client.messages.create,
@@ -84,29 +86,38 @@ async def _chat_with_mcp(client, messages, system_prompt):
                         logger.info("Claude requested tool: %s", block.name)
 
                 messages.append({"role": "assistant", "content": response.content})
-                local_results = execute_tool_calls(
-                    [block for block in response.content
-                     if getattr(block, "type", None) == "tool_use"
-                     and block.name in {tool["name"] for tool in local_tools}]
-                )
+                tool_results = []
 
-                tool_results = list(local_results)
                 for block in response.content:
                     if getattr(block, "type", None) != "tool_use":
                         continue
-                    if block.name not in mcp_tools:
-                        continue
-                    result = await session.call_tool(block.name, block.input)
-                    content = _mcp_text(result)
-                    logger.info("MCP tool result (%s): %s", block.name, content)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": f"<untrusted_content>\n{content}\n</untrusted_content>",
-                    })
+
+                    if block.name in local_tool_names:
+                        local_result = execute_tool_calls([block])
+                        tool_results.extend(local_result)
+                    elif block.name in mcp_tools:
+                        result = await session.call_tool(block.name, block.input)
+                        content = _mcp_text(result)
+                        logger.info("MCP tool result (%s): %s", block.name, content)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": f"<untrusted_content>\n{content}\n</untrusted_content>",
+                        })
+                    else:
+                        logger.warning("Unknown tool requested: %s", block.name)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": (
+                                f"Error: Unknown tool '{block.name}'. "
+                                "Available tools must be used exactly as listed."
+                            ),
+                            "is_error": True,
+                        })
 
                 if not tool_results:
-                    raise RuntimeError("Claude requested tool use without any tool calls.")
+                    raise RuntimeError("Claude requested tool use without any tool blocks.")
                 messages.append({"role": "user", "content": tool_results})
 
     logger.warning("Stopped after reaching the %s-iteration tool-use limit.", NUMBER_OF_ITERATIONS)
