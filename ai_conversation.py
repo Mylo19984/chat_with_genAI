@@ -37,10 +37,17 @@ def _mcp_text(result):
 
 async def _chat_with_mcp(client, messages, system_prompt):
     server_path = os.path.join(os.path.dirname(__file__), "news_mcp_server.py")
+    mcp_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONUNBUFFERED": "1",
+    }
+    if gnews_api_key := os.environ.get("GNEWS_API_KEY"):
+        mcp_env["GNEWS_API_KEY"] = gnews_api_key
+
     server = StdioServerParameters(
         command=sys.executable,
         args=[server_path],
-        env=os.environ.copy(),
+        env=mcp_env,
     )
 
     async with stdio_client(server) as (read_stream, write_stream):
