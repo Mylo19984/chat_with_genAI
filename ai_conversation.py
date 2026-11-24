@@ -54,12 +54,19 @@ async def _chat_with_mcp(client, messages, system_prompt):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             mcp_result = await session.list_tools()
-            mcp_tools = {tool.name: tool for tool in mcp_result.tools}
-            anthropic_tools = list(local_tools) + [
-                _anthropic_tool(tool) for tool in mcp_result.tools
-            ]
-
             local_tool_names = {tool["name"] for tool in local_tools}
+
+            # Local tools take precedence. MCP tools with duplicate names are
+            # excluded so Claude never receives two definitions or duplicate
+            # tool_result entries for the same tool_use_id.
+            mcp_tools = {
+                tool.name: tool
+                for tool in mcp_result.tools
+                if tool.name not in local_tool_names
+            }
+            anthropic_tools = list(local_tools) + [
+                _anthropic_tool(tool) for tool in mcp_tools.values()
+            ]
 
             for iteration in range(1, NUMBER_OF_ITERATIONS + 1):
                 response = await asyncio.to_thread(
