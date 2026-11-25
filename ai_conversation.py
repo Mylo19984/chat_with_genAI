@@ -110,14 +110,33 @@ async def _chat_with_mcp(client, messages, system_prompt):
                         local_result = execute_tool_calls([block])
                         tool_results.extend(local_result)
                     elif block.name in mcp_tools:
-                        result = await session.call_tool(block.name, block.input)
-                        content = _mcp_text(result)
-                        logger.info("MCP tool result (%s): %s", block.name, content)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": f"<untrusted_content>\n{content}\n</untrusted_content>",
-                        })
+                        try:
+                            result = await session.call_tool(block.name, block.input)
+                            content = _mcp_text(result)
+                            is_error = bool(getattr(result, "isError", False))
+                            logger.info(
+                                "MCP tool result (%s, is_error=%s): %s",
+                                block.name,
+                                is_error,
+                                content,
+                            )
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": content,
+                                "is_error": is_error,
+                            })
+                        except Exception as error:
+                            logger.exception("MCP tool call failed: %s", block.name)
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": (
+                                    f"MCP tool '{block.name}' failed to execute: "
+                                    f"{type(error).__name__}: {error}"
+                                ),
+                                "is_error": True,
+                            })
                     else:
                         logger.warning("Unknown tool requested: %s", block.name)
                         tool_results.append({
