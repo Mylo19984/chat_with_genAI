@@ -83,6 +83,27 @@ async def _chat_with_mcp(client, messages, system_prompt):
                     response.stop_reason,
                 )
 
+                if response.stop_reason == "max_tokens":
+                    messages.append({"role": "assistant", "content": response.content})
+                    reply = "\n".join(
+                        block.text
+                        for block in response.content
+                        if getattr(block, "type", None) == "text"
+                    )
+                    truncation_notice = (
+                        "The response was truncated because it reached the token limit. "
+                        "Please continue or simplify the request."
+                    )
+                    reply = "\n\n".join(part for part in (reply, truncation_notice) if part)
+                    logger.warning("Claude response truncated at the token limit.")
+                    logger.info("Final assistant response: %s", reply)
+                    return reply
+
+                if response.stop_reason == "pause_turn":
+                    messages.append({"role": "assistant", "content": response.content})
+                    logger.info("Claude paused the turn; continuing the conversation.")
+                    continue
+
                 if response.stop_reason != "tool_use":
                     messages.append({"role": "assistant", "content": response.content})
                     reply = "\n".join(
